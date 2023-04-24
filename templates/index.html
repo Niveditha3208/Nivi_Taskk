@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+
+    <style>
+        .selected {
+            background-color: aqua;
+        }
+
+        table,
+        th,
+        td {
+            border: 1px solid black;
+            border-collapse: collapse;
+        }
+        h3{
+            color: red;
+        }
+    </style>
+</head>
+
+<body>
+
+
+    <h2>Save User Details:</h2>
+    <form id="user-form">
+        <label for="f_name">First Name:</label>
+        <input type="text" id="f_name" name="f_name" required>
+        <br>
+        <br>
+
+        <label for="l_name">Last Name:</label>
+        <input type="text" id="l_name" name="l_name" required>
+        <br>
+        <br>
+
+        <label for="email">Email:</label>
+        <input type="email" id="email_id" name="email_id" required>
+        <br>
+        <br>
+
+        <label for="phone">Phone:</label>
+        <input type="tel" id="phone_number" name="phone_number" required>
+        <br>
+        <br>
+
+        <label for="address">Address:</label>
+        <input type="text" id="address" name="address" required>
+        <br>
+        <br>
+
+        <button type="submit">Submit</button>
+    </form>
+
+    <h3 id="error-message"></h3>
+
+    <br>
+    <br>
+
+    <h2>Show User Detail:</h2>
+    <table id="user-table">
+        <thead>
+            <tr>
+                <th>First Name</th>
+                <th>Last Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Address</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <br>
+    <div id="pagination">
+        <a href="#" id="prev">Prev</a>
+        <br>
+        <a href="#" id="next">next</a>
+    </div>
+
+    <br>
+    <br>
+    <br>
+    <label for="cars">Choose Filter sorting:</label>
+    <select name="sort" id="sort">
+        <option value="DESC" selected>Descending</option>
+        <option value="ASC">Ascending</option>
+
+    </select>
+
+    <script>
+
+        $(document).ready(function () {
+
+            // Get Authorization Token
+            function getToken(user_id) {
+                return $.ajax({
+                    url: `/oauth/token`,
+                    type: 'POST',
+                    data: { "user_id": user_id },
+                    async: false,
+                    success: function (response) {
+                        token = response.access_token;
+                        //console.log("get_token",token);
+                        
+                    },
+                    error: function (xhr, status, error) {
+
+                        if (xhr.status != 200) {
+                            // Access token expired, refresh and try again
+                            console.log("Unable to get token. Please check server logs.")
+                        }
+                        else {
+                            console.error(error);
+
+                        }
+                    }
+                });
+
+            }
+
+            getToken('nav');
+            // console.log("token outside: ", token);
+
+            let users = [];
+
+
+
+            function getUsers(url, token) {
+               // console.log("get_users:",token);
+                $.ajax({
+                    url: url,
+                    type: 'GET',
+                    async: false,
+                    headers: { "Authorization": token },
+                    success: function (response) {
+                        users = response.users;
+                        pagination = response.pagination;
+                        renderUsers();
+                        //renderPagination();
+                        highlight()
+                        //console.log(users);
+                    },
+                    error: function (xhr, status, error) {
+                        if (xhr.status === 401) {
+                            let message = "Token Expired. Renewing Token...";
+                            console.log(message);
+                            $('#error-message').empty().append(message);
+                             // Access token expired, refresh and try again
+                            // console.log("initial token:",token);
+                          
+                             setTimeout(function() {
+                                var token = getToken('nav');
+                                //console.log("new token :",token.responseJSON.access_token);
+                                token=token.responseJSON.access_token;
+                                getUsers(url,token);
+                                $('#error-message').empty();
+                                }, 2000);
+                                
+                            
+                        }
+                        else if (xhr.status == 429) {
+
+                            let message = "Too Many Request: Only 5 req/min allowed. Wait for 1 min and then try";
+                            $('#error-message').empty().append(message);
+
+                            console.log(message);
+                        }
+                        else {
+                            console.error(error);
+                        }
+                    }
+                });
+
+            }
+
+            // console.log("token: ", token)
+            let url = "http://127.0.0.1:5000/users";
+            getUsers(url, token);
+
+            let nex = $('#next');
+
+            nex.click(function () {
+                if (pagination.next_url != null) {
+
+                    getUsers('http://127.0.0.1:5000' + pagination.next_url, token);
+                }
+            });
+
+            let pre = $('#prev');
+            pre.click(function () {
+
+                if (pagination.prev_url != null) {
+                    getUsers('http://127.0.0.1:5000' + pagination.prev_url, token);
+                }
+            });
+
+
+            $('#user-form').submit(function (event) {
+                event.preventDefault(); // prevent default form submission
+                let form_data = $(this).serialize(); // serialize the form data
+                $.ajax({
+                    type: 'POST',
+                    url: 'http://127.0.0.1:5000/user-details',
+                    headers: { "Authorization": token },
+                    data: form_data,
+                    success: function (response) {
+                        console.log(response); // handle successful response
+                        getUsers(url, token);
+                    },
+                    error: function (xhr, status, error) {
+                        console.log(xhr.responseText); // handle error response
+                    }
+                });
+
+
+            });
+
+//displaying user data in  HTML table 
+            function renderUsers() {
+                // getUsers(url, token); 
+                let tbody = $('#user-table tbody');
+                tbody.empty();
+                for (let i = 0; i < users.length; i++) {
+                    let user = users[i];
+                    console.log(user);
+                    let row = $('<tr>');
+                    row.append($('<td>').text(user[0]));//f_name
+                    row.append($('<td>').text(user[1]));//l_name
+                    row.append($('<td>').text(user[2]));
+                    row.append($('<td>').text(user[3]));
+                    row.append($('<td>').text(user[4]));
+                    tbody.append(row);
+                }
+            }
+
+
+            $('#sort').change(function () {
+                var selectedValue = $(this).val();
+                console.log(selectedValue);
+
+                if (selectedValue == 'ASC') {
+                    url = 'http://127.0.0.1:5000/users?page=1&limit=5&sort=ASC';
+                    getUsers(url, token);
+                } else {
+                    url = 'http://127.0.0.1:5000/users?page=1&limit=5&sort=DESC';
+                    getUsers(url, token);
+                }
+
+            });
+
+
+            function highlight() {
+                $(document).off('keyup');
+                let currentRow = 0;
+                let highlightRow = false;
+
+                var totalRows = $('#user-table tbody').children('tr').length;
+
+                console.log("total rows:", totalRows);
+
+                $('tbody tr').removeClass('selected');
+                $('tbody tr').eq(0).addClass('selected');
+
+
+                $(document).keyup(function (e) {
+
+
+                    switch (e.which) {
+                        case 38: // up arrow
+                            nextRow = currentRow - 1;
+                            if (nextRow >= 0) {
+                                highlightRow = true;
+                            }
+
+                            break;
+                        case 40: // down arrow
+                            nextRow = currentRow + 1;
+                            if (nextRow < totalRows) {
+                                highlightRow = true;
+                            }
+
+                            break;
+                        default:
+                            return;
+                    }
+
+                    if (highlightRow) {
+
+                        // remove highlight from current row
+                        $('tbody tr').eq(currentRow).removeClass('selected');
+                        console.log("current row", currentRow);
+                        // add highlight to next row
+                        $('tbody tr').eq(nextRow).addClass('selected');
+                        console.log("next row", nextRow);
+                        currentRow = nextRow;
+                        highlightRow = false;
+
+
+                    }
+
+                });
+            }
+
+
+        });
+
+    </script>
+
+</body>
+
+</html>
